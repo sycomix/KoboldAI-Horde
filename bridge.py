@@ -48,16 +48,16 @@ def validate_kai(kai):
     global softprompts
     global current_softprompt
     try:
-        req = requests.get(kai + '/api/latest/model')
+        req = requests.get(f'{kai}/api/latest/model')
         model = req.json()["result"]
-        req = requests.get(kai + '/api/latest/config/max_context_length')
+        req = requests.get(f'{kai}/api/latest/config/max_context_length')
         max_content_length = req.json()["value"]
-        req = requests.get(kai + '/api/latest/config/max_length')
+        req = requests.get(f'{kai}/api/latest/config/max_length')
         max_length = req.json()["value"]
         if model not in softprompts:
-                req = requests.get(kai + '/api/latest/config/soft_prompts_list')
-                softprompts[model] = [sp['value'] for sp in req.json()["values"]]
-        req = requests.get(kai + '/api/latest/config/soft_prompt')
+            req = requests.get(f'{kai}/api/latest/config/soft_prompts_list')
+            softprompts[model] = [sp['value'] for sp in req.json()["values"]]
+        req = requests.get(f'{kai}/api/latest/config/soft_prompt')
         current_softprompt = req.json()["value"]
     except requests.exceptions.JSONDecodeError:
         logger.error(f"Server {kai} is up but does not appear to be a KoboldAI server. Are you sure it's running the UNITED branch?")
@@ -74,7 +74,7 @@ def bridge(interval, api_key, kai_name, kai_url, cluster, priority_usernames):
     loop_retry = 0
     while True:
         if not validate_kai(kai_url):
-            logger.warning(f"Waiting 10 seconds...")
+            logger.warning("Waiting 10 seconds...")
             time.sleep(10)
             continue
         gen_dict = {
@@ -90,7 +90,7 @@ def bridge(interval, api_key, kai_name, kai_url, cluster, priority_usernames):
             loop_retry += 1
         else:
             try:
-                pop_req = requests.post(cluster + '/api/v1/generate/pop', json = gen_dict)
+                pop_req = requests.post(f'{cluster}/api/v1/generate/pop', json = gen_dict)
             except requests.exceptions.ConnectionError:
                 logger.warning(f"Server {cluster} unavailable during pop. Waiting 10 seconds...")
                 time.sleep(10)
@@ -118,9 +118,14 @@ def bridge(interval, api_key, kai_name, kai_url, cluster, priority_usernames):
             current_payload['quiet'] = True
             requested_softprompt = pop['softprompt']
         if requested_softprompt != current_softprompt:
-            req = requests.put(kai_url + '/api/latest/config/soft_prompt/', json = {"value": requested_softprompt})
+            req = requests.put(
+                f'{kai_url}/api/latest/config/soft_prompt/',
+                json={"value": requested_softprompt},
+            )
             time.sleep(1) # Wait a second to unload the softprompt
-        gen_req = requests.post(kai_url + '/api/latest/generate/', json = current_payload)
+        gen_req = requests.post(
+            f'{kai_url}/api/latest/generate/', json=current_payload
+        )
         if type(gen_req.json()) is not dict:
             logger.error(f'KAI instance {kai_url} API unexpected response on generate: {gen_req}. Sleeping 10 seconds...')
             time.sleep(9)
@@ -136,12 +141,14 @@ def bridge(interval, api_key, kai_name, kai_url, cluster, priority_usernames):
         }
         while current_id and current_generation:
             try:
-                submit_req = requests.post(cluster + '/api/v1/generate/submit', json = submit_dict)
+                submit_req = requests.post(
+                    f'{cluster}/api/v1/generate/submit', json=submit_dict
+                )
                 if submit_req.status_code == 404:
-                    logger.warning(f"The generation we were working on got stale. Aborting!")
+                    logger.warning("The generation we were working on got stale. Aborting!")
                 elif not submit_req.ok:
                     if "already submitted" in submit_req.text:
-                        logger.warning(f'Server think this gen already submitted. Continuing')
+                        logger.warning('Server think this gen already submitted. Continuing')
                     else:
                         logger.error(submit_req.status_code)
                         logger.warning(f"During gen submit, server {cluster} responded: {submit_req.text}. Waiting for 10 seconds...")
@@ -173,6 +180,6 @@ if __name__ == "__main__":
     try:
         bridge(args.interval, api_key, kai_name, kai_url, cluster, priority_usernames)
     except KeyboardInterrupt:
-        logger.info(f"Keyboard Interrupt Received. Ending Process")
+        logger.info("Keyboard Interrupt Received. Ending Process")
     logger.init(f"{kai_name} Instance", status="Stopping")
 

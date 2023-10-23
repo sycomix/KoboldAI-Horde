@@ -38,7 +38,7 @@ load_dotenv()
 def get_error(error, **kwargs):
     if error == ServerErrors.INVALID_API_KEY:
         logger.warning(f'Invalid API Key sent for {kwargs["subject"]}.')
-        return(f'No user matching sent API Key. Have you remembered to register at https://koboldai.net/register ?')
+        return 'No user matching sent API Key. Have you remembered to register at https://koboldai.net/register ?'
     if error == ServerErrors.WRONG_CREDENTIALS:
         logger.warning(f'User "{kwargs["username"]}" sent wrong credentials for utilizing instance {kwargs["kai_instance"]}')
         return(f'wrong credentials for utilizing instance {kwargs["kai_instance"]}')
@@ -81,9 +81,7 @@ class SyncGenerate(Resource):
         parser.add_argument("world_info", type=str, required=False, help="If specified, only servers who can load this this world info will generate this request")
         args = parser.parse_args()
         username = 'Anonymous'
-        user = None
-        if args.api_key:
-            user = _db.find_user_by_api_key(args['api_key'])
+        user = _db.find_user_by_api_key(args['api_key']) if args.api_key else None
         if not user:
             return(f"{get_error(ServerErrors.INVALID_API_KEY, subject = 'prompt generation')}",401)
         username = user.get_unique_alias()
@@ -133,9 +131,7 @@ class AsyncGeneratePrompt(Resource):
     @logger.catch
     def get(self, api_version = None, id = ''):
         wp = _waiting_prompts.get_item(id)
-        if not wp:
-            return("ID not found", 404)
-        return(wp.get_status(), 200)
+        return ("ID not found", 404) if not wp else (wp.get_status(), 200)
 
 
 class AsyncGenerate(Resource):
@@ -205,13 +201,14 @@ class PromptPop(Resource):
         priority_users = [user]
         ## Start prioritize by bridge request ##
         for priority_username in args.priority_usernames:
-            priority_user = _db.find_user_by_username(priority_username)
-            if priority_user:
+            if priority_user := _db.find_user_by_username(priority_username):
                 priority_users.append(priority_user)
         for priority_user in priority_users:
-            for wp in _waiting_prompts.get_all():
-                if wp.user == priority_user and wp.needs_gen():
-                    prioritized_wp.append(wp)
+            prioritized_wp.extend(
+                wp
+                for wp in _waiting_prompts.get_all()
+                if wp.user == priority_user and wp.needs_gen()
+            )
         ## End prioritize by bridge request ##
         for wp in _waiting_prompts.get_waiting_wp_by_kudos():
             if wp not in prioritized_wp:
@@ -274,9 +271,7 @@ class TransferKudos(Resource):
         ret = _db.transfer_kudos_from_apikey_to_username(args['api_key'],args['username'],args['amount'])
         kudos = ret[0]
         error = ret[1]
-        if error != 'OK':
-            return(f"{error}",400)
-        return({"transfered": kudos}, 200)
+        return (f"{error}", 400) if error != 'OK' else ({"transfered": kudos}, 200)
 
 class Models(Resource):
     @logger.catch
@@ -310,12 +305,9 @@ class Servers(Resource):
 class ServerSingle(Resource):
     @logger.catch
     def get(self, api_version = None, server_id = ''):
-        server = None
-        for s in _db.servers.values():
-            if s.id == server_id:
-                server = s
-                break
-        if server:
+        if server := next(
+            (s for s in _db.servers.values() if s.id == server_id), None
+        ):
             sdict = {
                 "name": server.name,
                 "id": server.id,
@@ -335,15 +327,16 @@ class ServerSingle(Resource):
 class Users(Resource):
     @logger.catch
     def get(self, api_version = None):
-        user_dict = {}
-        for user in _db.users.values():
-            user_dict[user.get_unique_alias()] = {
+        user_dict = {
+            user.get_unique_alias(): {
                 "id": user.id,
                 "kudos": user.kudos,
                 "kudos_details": user.kudos_details,
                 "usage": user.usage,
                 "contributions": user.contributions,
             }
+            for user in _db.users.values()
+        }
         return(user_dict,200)
 
 
@@ -351,12 +344,9 @@ class UserSingle(Resource):
     @logger.catch
     def get(self, api_version = None, user_id = ''):
         logger.debug(user_id)
-        user = None
-        for u in _db.users.values():
-            if str(u.id) == user_id:
-                user = u
-                break
-        if user:
+        if user := next(
+            (u for u in _db.users.values() if str(u.id) == user_id), None
+        ):
             udict = {
                 "username": user.get_unique_alias(),
                 "kudos": user.kudos,
@@ -459,7 +449,6 @@ def get_oauth_id():
 def register():
     api_key = None
     user = None
-    welcome = 'Welcome'
     username = ''
     pseudonymous = False
     oauth_id = get_oauth_id()
@@ -481,8 +470,7 @@ def register():
             user = User(_db)
             user.create(request.form['username'], oauth_id, api_key, None)
             username = request.form['username']
-    if user:
-        welcome = f"Welcome back {user.get_unique_alias()}"
+    welcome = f"Welcome back {user.get_unique_alias()}" if user else 'Welcome'
     return render_template('register.html',
                            page_title="Join the KoboldAI Horde!",
                            welcome=welcome,
@@ -536,21 +524,21 @@ def transfer():
 @REST_API.route('/google/<return_to>')
 def google_login(return_to):
     global dance_return_to
-    dance_return_to = '/' + return_to
+    dance_return_to = f'/{return_to}'
     return redirect(url_for('google.login'))
 
 
 @REST_API.route('/discord/<return_to>')
 def discord_login(return_to):
     global dance_return_to
-    dance_return_to = '/' + return_to
+    dance_return_to = f'/{return_to}'
     return redirect(url_for('discord.login'))
 
 
 @REST_API.route('/github/<return_to>')
 def github_login(return_to):
     global dance_return_to
-    dance_return_to = '/' + return_to
+    dance_return_to = f'/{return_to}'
     return redirect(url_for('github.login'))
 
 

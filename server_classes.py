@@ -47,9 +47,7 @@ class WaitingPrompt:
         thread.start()
 
     def needs_gen(self):
-        if self.n > 0:
-            return(True)
-        return(False)
+        return self.n > 0
 
     def start_generation(self, server, matching_softprompt):
         if self.n <= 0:
@@ -58,20 +56,16 @@ class WaitingPrompt:
         self.processing_gens.append(new_gen)
         self.n -= 1
         self.refresh()
-        prompt_payload = {
+        return {
             "payload": self.gen_payload,
             "softprompt": matching_softprompt,
             "id": new_gen.id,
         }
-        return(prompt_payload)
 
     def is_completed(self):
         if self.needs_gen():
             return(False)
-        for procgen in self.processing_gens:
-            if not procgen.is_completed():
-                return(False)
-        return(True)
+        return all(procgen.is_completed() for procgen in self.processing_gens)
 
     def count_processing_gens(self):
         ret_dict = {
@@ -122,9 +116,7 @@ class WaitingPrompt:
         self.last_process_time = datetime.now()
 
     def is_stale(self):
-        if (datetime.now() - self.last_process_time).seconds > self.stale_time:
-            return(True)
-        return(False)
+        return (datetime.now() - self.last_process_time).seconds > self.stale_time
 
 
 class ProcessingGeneration:
@@ -151,9 +143,7 @@ class ProcessingGeneration:
         return(chars)
 
     def is_completed(self):
-        if self.generation:
-            return(True)
-        return(False)
+        return bool(self.generation)
 
     def delete(self):
         self._processing_generations.del_item(self)
@@ -261,11 +251,11 @@ class KAIServer:
         self.kudos_details[action] = round(self.kudos_details.get(action,0) + abs(kudos), 2) 
 
     def get_performance(self):
-        if len(self.performances):
-            ret_str = f'{round(sum(self.performances) / len(self.performances),1)} chars per second'
-        else:
-            ret_str = f'No requests fulfilled yet'
-        return(ret_str)
+        return (
+            f'{round(sum(self.performances) / len(self.performances), 1)} chars per second'
+            if len(self.performances)
+            else 'No requests fulfilled yet'
+        )
 
     def is_stale(self):
         try:
@@ -277,7 +267,7 @@ class KAIServer:
         return(False)
 
     def serialize(self):
-        ret_dict = {
+        return {
             "oauth_id": self.user.oauth_id,
             "name": self.name,
             "model": self.model,
@@ -293,7 +283,6 @@ class KAIServer:
             "softprompts": self.softprompts,
             "uptime": self.uptime,
         }
-        return(ret_dict)
 
     def deserialize(self, saved_dict):
         self.user = self._db.find_user_by_oauth_id(saved_dict["oauth_id"])
@@ -332,25 +321,18 @@ class Index:
 class PromptsIndex(Index):
 
     def count_waiting_requests(self, user):
-        count = 0
-        for wp in self._index.values():
-            if wp.user == user and not wp.is_completed():
-                count += 1
-        return(count)
+        return sum(
+            1
+            for wp in self._index.values()
+            if wp.user == user and not wp.is_completed()
+        )
 
     def count_total_waiting_generations(self):
-        count = 0
-        for wp in self._index.values():
-            count += wp.n
-        return(count)
+        return sum(wp.n for wp in self._index.values())
 
     def get_waiting_wp_by_kudos(self):
         sorted_wp_list = sorted(self._index.values(), key=lambda x: x.user.kudos, reverse=True)
-        final_wp_list = []
-        for wp in sorted_wp_list:
-            if wp.needs_gen():
-                final_wp_list.append(wp)
-        return(final_wp_list)
+        return [wp for wp in sorted_wp_list if wp.needs_gen()]
 
 
 
@@ -403,9 +385,7 @@ class User:
 
     # Checks that this user matches the specified API key
     def check_key(api_key):
-        if self.api_key and self.api_key == api_key:
-            return(True)
-        return(False)
+        return bool(self.api_key and self.api_key == api_key)
 
     def get_unique_alias(self):
         return(f"{self.username}#{self.id}")
@@ -429,7 +409,7 @@ class User:
 
 
     def serialize(self):
-        ret_dict = {
+        return {
             "username": self.username,
             "oauth_id": self.oauth_id,
             "api_key": self.api_key,
@@ -442,7 +422,6 @@ class User:
             "creation_date": self.creation_date.strftime("%Y-%m-%d %H:%M:%S"),
             "last_active": self.last_active.strftime("%Y-%m-%d %H:%M:%S"),
         }
-        return(ret_dict)
 
     def deserialize(self, saved_dict):
         self.username = saved_dict["username"]
@@ -521,18 +500,16 @@ class Database:
     def write_files_to_disk(self):
         if not os.path.exists('db'):
             os.mkdir('db')
-        server_serialized_list = []
-        for server in self.servers.values():
-            # We don't store data for anon servers
-            if server.user == self.anon: continue
-            server_serialized_list.append(server.serialize())
+        server_serialized_list = [
+            server.serialize()
+            for server in self.servers.values()
+            if server.user != self.anon
+        ]
         with open(self.SERVERS_FILE, 'w') as db:
             json.dump(server_serialized_list,db)
         with open(self.STATS_FILE, 'w') as db:
             json.dump(self.stats,db)
-        user_serialized_list = []
-        for user in self.users.values():
-            user_serialized_list.append(user.serialize())
+        user_serialized_list = [user.serialize() for user in self.users.values()]
         with open(self.USERS_FILE, 'w') as db:
             json.dump(user_serialized_list,db)
 
@@ -564,11 +541,7 @@ class Database:
         return(models_ret)
 
     def count_active_servers(self):
-        count = 0
-        for server in self.servers.values():
-            if not server.is_stale():
-                count += 1
-        return(count)
+        return sum(1 for server in self.servers.values() if not server.is_stale())
 
     def get_total_usage(self):
         totals = {
@@ -610,18 +583,18 @@ class Database:
         for user in self.users.values():
             uniq_username = username.split('#')
             if user.username == uniq_username[0] and user.id == int(uniq_username[1]):
-                if user == self.anon and not self.ALLOW_ANONYMOUS:
-                    return(None)
-                return(user)
+                return None if user == self.anon and not self.ALLOW_ANONYMOUS else user
         return(None)
 
     def find_user_by_api_key(self,api_key):
-        for user in self.users.values():
-            if user.api_key == api_key:
-                if user == self.anon and not self.ALLOW_ANONYMOUS:
-                    return(None)
-                return(user)
-        return(None)
+        return next(
+            (
+                None if user == self.anon and not self.ALLOW_ANONYMOUS else user
+                for user in self.users.values()
+                if user.api_key == api_key
+            ),
+            None,
+        )
 
     def find_server_by_name(self,server_name):
         return(self.servers.get(server_name))
@@ -641,17 +614,19 @@ class Database:
             return([0,'Tried to burn kudos via sending to Anonymous. Assuming PEBKAC and aborting.'])
         if dest_user == source_user:
             return([0,'Cannot send kudos to yourself, ya monkey!'])
-        kudos = self.transfer_kudos(source_user,dest_user, amount)
-        return(kudos)
+        return self.transfer_kudos(source_user,dest_user, amount)
 
     def transfer_kudos_from_apikey_to_username(self, source_api_key, dest_username, amount):
-        source_user = self.find_user_by_api_key(source_api_key)
-        if not source_user:
+        if source_user := self.find_user_by_api_key(source_api_key):
+            return (
+                ([0, 'You cannot transfer Kudos from Anonymous, smart-ass.'])
+                if source_user == self.anon
+                else self.transfer_kudos_to_username(
+                    source_user, dest_username, amount
+                )
+            )
+        else:
             return([0,'Invalid API Key.'])
-        if source_user == self.anon:
-            return([0,'You cannot transfer Kudos from Anonymous, smart-ass.'])
-        kudos = self.transfer_kudos_to_username(source_user, dest_username, amount)
-        return(kudos)
 
     def calculate_model_multiplier(self, model_name):
         # To avoid doing this calculations all the time
@@ -674,7 +649,5 @@ class Database:
 
     def convert_chars_to_kudos(self, chars, model_name):
         multiplier = self.calculate_model_multiplier(model_name)
-        kudos = round(chars * multiplier / 100,2)
-        # logger.info([chars,multiplier,kudos])
-        return(kudos)
+        return round(chars * multiplier / 100,2)
 

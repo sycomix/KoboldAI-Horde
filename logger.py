@@ -24,30 +24,22 @@ def quiesce_logger(count):
 def is_stdout_log(record):
     if record["level"].name not in STDOUT_LEVELS:
         return(False)
-    if record["level"].no < verbosity + quiet:
-        return(False)
-    return(True)
+    return record["level"].no >= verbosity + quiet
 
 def is_init_log(record):
     if record["level"].name not in INIT_LEVELS:
         return(False)
-    if record["level"].no < verbosity + quiet:
-        return(False)
-    return(True)
+    return record["level"].no >= verbosity + quiet
 
 def is_msg_log(record):
     if record["level"].name not in MESSAGE_LEVELS:
         return(False)
-    if record["level"].no < verbosity + quiet:
-        return(False)
-    return(True)
+    return record["level"].no >= verbosity + quiet
 
 def is_stderr_log(record):
     if record["level"].name in STDOUT_LEVELS + INIT_LEVELS + MESSAGE_LEVELS:
         return(False)
-    if record["level"].no < verbosity + quiet:
-        return(False)
-    return(True)
+    return record["level"].no >= verbosity + quiet
 
 def test_logger():
     logger.generation("This is a generation message\nIt is typically multiline\nThee Lines".encode("unicode_escape").decode("utf-8"))
